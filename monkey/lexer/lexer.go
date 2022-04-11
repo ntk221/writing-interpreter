@@ -67,7 +67,7 @@ func newToken(tokenType token.TokenType, ch byte) token.Token {
 	return token.Token{Type: tokenType, Literal: string(ch)}
 }
 
-// *Lexer型のデータを受け取って、現在読んでいる文字が英文字の時には、後に続く英文字の部分を切り出し、Lexerのinputにセットする
+// Lexerについてのメソッドで、Lexerが現在読んでいる文字が英文字の時には、後に続く英文字の部分を切り出し、Lexerのinputにセットする
 func (l *Lexer) readIdentifier() string {
 	position := l.position
 	for isLetter(l.ch) {
@@ -80,14 +80,14 @@ func isLetter(ch byte) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
 }
 
-// *Lexer型のデータを受け取り、Lexerが現在読んでいる場所が空文字の時には、そのままreadCharを呼び出して、そこをスキップする
+// Lexerについてのメソッドで、Lexerが現在読んでいる場所が空文字の時には、そのままreadCharを呼び出して、そこをスキップする
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 		l.readChar()
 	}
 }
 
-// *Lexer型のデータを受け取って、Lexerが現在読んでいる場所が数字のときには、後に続く数字の部分を切り出し、Lexerのinputにセットする
+// Lexerについてのメソッドで、Lexerが現在読んでいる場所が数字のときには、後に続く数字の部分を切り出し、Lexerのinputにセットする
 func (l *Lexer) readNumber() string {
 	position := l.position
 	for isDigit(l.ch) {
