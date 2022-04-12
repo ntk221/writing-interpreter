@@ -20,8 +20,9 @@ func (l *Lexer) readChar() {
 		l.ch = 0
 	} else {
 		l.ch = l.input[l.readPosition]
-		l.readPosition += 1
 	}
+	l.position = l.readPosition //現在読んでいる文字を一つすすめる
+	l.readPosition += 1         //次に読む文字を一つすすめる
 }
 
 func (l *Lexer) NextToken() token.Token {
@@ -31,7 +32,35 @@ func (l *Lexer) NextToken() token.Token {
 
 	switch l.ch {
 	case '=':
-		tok = newToken(token.ASSIGN, l.ch)
+		if l.peekChar() == '=' {
+			ch := l.ch                           //今読んでいる箇所の文字をローカル変数に入れておく
+			l.readChar()                         //Lexerが読んでいる箇所を一つすすめる
+			literal := string(ch) + string(l.ch) //Lexerが読んでいる箇所が一つ進んでいるので、ここのl.chは次の'='のこと
+			tok = token.Token{Type: token.EQ, Literal: literal}
+		} else {
+			tok = newToken(token.ASSIGN, l.ch) //覗き見した先が'='じゃないときはそのままトークンを生成する
+		}
+	case '+':
+		tok = newToken(token.PLUS, l.ch)
+	case '-':
+		tok = newToken(token.MINUS, l.ch)
+	case '!':
+		if l.peekChar() == '=' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.NOT_EQ, Literal: literal}
+		} else {
+			tok = newToken(token.BANG, l.ch)
+		}
+	case '/':
+		tok = newToken(token.SLASH, l.ch)
+	case '*':
+		tok = newToken(token.ASTERISK, l.ch)
+	case '<':
+		tok = newToken(token.LT, l.ch)
+	case '>':
+		tok = newToken(token.GT, l.ch)
 	case ';':
 		tok = newToken(token.SEMICOLON, l.ch)
 	case '(':
@@ -40,8 +69,6 @@ func (l *Lexer) NextToken() token.Token {
 		tok = newToken(token.RPAREN, l.ch)
 	case ',':
 		tok = newToken(token.COMMA, l.ch)
-	case '+':
-		tok = newToken(token.PLUS, l.ch)
 	case '{':
 		tok = newToken(token.LBRACE, l.ch)
 	case '}':
@@ -53,6 +80,10 @@ func (l *Lexer) NextToken() token.Token {
 		if isLetter(l.ch) {
 			tok.Literal = l.readIdentifier()          //英文字の部分を切り取って、tokのLiteralフィールドにセット
 			tok.Type = token.LookupIdent(tok.Literal) //token.LookupIdent()を使って、それがキーワードか識別子か判定し、対応するtokenTypeをセットする
+			return tok
+		} else if isDigit(l.ch) {
+			tok.Type = token.INT
+			tok.Literal = l.readNumber()
 			return tok
 		} else {
 			tok = newToken(token.ILLEGAL, l.ch)
@@ -98,4 +129,13 @@ func (l *Lexer) readNumber() string {
 
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+// Lexerが現在読んでいる文字の一つ先の文字を「覗き見」する
+func (l *Lexer) peekChar() byte {
+	if l.readPosition >= len(l.input) {
+		return 0
+	} else {
+		return l.input[l.readPosition] //現在読んでいる文字の一つ先の文字を返す
+	}
 }
