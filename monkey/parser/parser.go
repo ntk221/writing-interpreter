@@ -20,6 +20,18 @@ const (
 	CALL        // myfunction(X)
 )
 
+// トークンのタイプとその優先順位を関連づけるテーブル
+var precedences = map[token.TokenType]int{
+	token.EQ:       EQUALS,
+	token.NOT_EQ:   EQUALS,
+	token.LT:       LESSGREATER,
+	token.GT:       LESSGREATER,
+	token.PLUS:     SUM,
+	token.MINUS:    SUM,
+	token.SLASH:    PRODUCT,
+	token.ASTERISK: PRODUCT,
+}
+
 type Parser struct {
 	l         *lexer.Lexer // Lexer インスタンスへのポインタ、このインスタンスの NextToken() を呼び出し、入力から次のトークンを繰り返し取得する
 	curToken  token.Token  // Parser が現在読んでいるトークン, Parser はこのトークンを見て次に何をするか判断する
@@ -43,10 +55,25 @@ func New(l *lexer.Lexer) *Parser {
 		errors: []string{},
 	}
 
-	// New()された時には、prefixParsoFnsマップを初期化して,構文解析関数を登録する
+	// New()された時には、prefixParseFnsマップを初期化して,構文解析関数を登録する
 	p.prefixParseFns = make(map[token.TokenType]prefixParseFn)
-	p.registerPrefix(token.IDENT, p.parseIdentifier)   // トークンタイプ token.IDENT が出現したときに呼び出す構文解析関数はparseIdentifier
-	p.registerPrefix(token.INT, p.parseIntegerLiteral) // トークンタイプ token.INT が出現したときに呼び出す構文解析関数はparseIntegerLiteral
+	p.registerPrefix(token.IDENT, p.parseIdentifier)      // トークンタイプ token.IDENT が出現したときに呼び出す構文解析関数はparseIdentifier
+	p.registerPrefix(token.INT, p.parseIntegerLiteral)    // トークンタイプ token.INT が出現したときに呼び出す構文解析関数はparseIntegerLiteral
+	p.registerPrefix(token.BANG, p.parsePrefixExpression) // トークンが前置演算子の時には呼び出す構文解析関数は parsePrefixExpression
+	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+
+	// New()された時には、infixParseFnsマップを初期化して、構文解析関数を登録する
+	p.infixParseFns = make(map[token.TokenType]infixParseFn)
+	// トークンが中置演算子の時に呼び出す構文解析関数は parseInfixExpression
+	p.registerInfix(token.PLUS, p.parseInfixExpression)
+	p.registerInfix(token.MINUS, p.parseInfixExpression)
+	p.registerInfix(token.SLASH, p.parseInfixExpression)
+	p.registerInfix(token.SLASH, p.parseInfixExpression)
+	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
+	p.registerInfix(token.EQ, p.parseInfixExpression)
+	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
+	p.registerInfix(token.LT, p.parseInfixExpression)
+	p.registerInfix(token.GT, p.parseInfixExpression)
 
 	// まずは二つトークンを読み込む。これで curToken と peekToken の両方がセットされたことになる。
 	p.nextToken()
@@ -136,18 +163,37 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 	return stmt
 }
 
-// Parser が現在読んでいるトークンの"前置"に関連づけられた構文解析関数があるか確認し、sるときにはそれを呼び出す
+// トークンを受け取った時、対応する前置構文解析関数がないときに、Parser のエラーにそのことを追加するメソッド
+func (p *Parser) noPrefixParseFnError(t token.TokenType) {
+	msg := fmt.Sprintf("no prefix parse function for %s found", t)
+	p.errors = append(p.errors, msg)
+}
+
+// Parser が現在読んでいるトークンの"前置"に関連づけられた構文解析関数があるか確認し、あるときにはそれを呼び出す
 func (p *Parser) parseExpression(precedence int) ast.Expression {
-	prefix := p.prefixParseFns[p.curToken.Type] // 現在読んでいるトークンのタイプに関連づけられた構文解析関数があるとき、それを prefix に格納
+	prefix := p.prefixParseFns[p.curToken.Type] // 現在読んでいるトークンのタイプに関連づけられた構文解析関数があるとき、それを prefix に保存
 	if prefix == nil {
+		p.noPrefixParseFnError(p.curToken.Type)
 		return nil
 	}
-	leftExp := prefix() // ある時にはそのprefix関数を呼び出し、その結果を返す
+	leftExp := prefix() // 構文解析関数が見つかった時にはそのprefix関数を呼び出し、その結果を返す
+
+	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() { //次のトークンがセミコロンではなく、かつ、次のトークンの優先順位が現在の優先順位より高い場合に,以下の処理を繰り返し、これより優先順位の低いトークンに遭遇するまで続ける！！
+
+		infix := p.infixParseFns[p.peekToken.Type] // 現在読んでいるトークンの次のトークンに関連づけられた infixParseFn を探す
+		if infix == nil {
+			return leftExp
+		}
+
+		p.nextToken() // 構文解析関数が見つかった時には、Parser が現在読んでいるトークンを一つ進めてから
+
+		leftExp = infix(leftExp) // そのinfix関数を呼び出す。この時、prefixParseFn から帰ってきた式を引数として渡す
+	}
 
 	return leftExp
 }
 
-// 現在のトークンを Token フィールドに,トークンのリテラル値を Value フィールドに格納する。
+// 現在のトークンを Token フィールドに,トークンのリテラル値を Value フィールドに格納した Identifier ノードを生成する
 func (p *Parser) parseIdentifier() ast.Expression {
 	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal} // Parser が現在読んでいるトークンは進めない！
 }
@@ -166,6 +212,35 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 	lit.Value = value
 
 	return lit
+}
+
+// 現在読んでいるトークンが前置演算子である時に、そこから適切に PrefixExpression ノードを生成する
+func (p *Parser) parsePrefixExpression() ast.Expression {
+	expression := &ast.PrefixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+	}
+
+	p.nextToken() // 前置演算式を正しく構文解析するためには、ここで複数のトークンを消費するために、p.nextTokenを読んで、トークンんを進める！
+
+	expression.Right = p.parseExpression(PREFIX)
+
+	return expression
+}
+
+// 現在読んでいるトークンが中置演算子である時に、そこから適切に InfixExpression ノードを生成する
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	expression := &ast.InfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Left:     left, // parseInfixExpression が引数としてとる ast.Expressionを Leftフィールドに保存する
+	}
+
+	precedence := p.curPrecedence() // 現在のトークン（中置演算子式の演算子）の優先順位を保存する
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence) // トークンを一つ進めてから、parseExpression を呼び出して、このノードのRightフィールドを埋める
+
+	return expression
 }
 
 // トークンタイプを入力すると、現在 Parser が読んでいるトークンのタイプと一致しているか判定する
@@ -208,4 +283,22 @@ func (p *Parser) registerPrefix(tokenType token.TokenType, fn prefixParseFn) {
 
 func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) {
 	p.infixParseFns[tokenType] = fn
+}
+
+// p.peekTokenのトークンタイプに対応している優先順位を返す
+func (p *Parser) peekPrecedence() int {
+	if p, ok := precedences[p.peekToken.Type]; ok {
+		return p
+	}
+
+	return LOWEST // p.peekTokenに対応している優先順位がない時は、LOWESTを返す
+}
+
+// p.curTokenのトークンタイプに対応している優先順位を返す
+func (p *Parser) curPrecedence() int {
+	if p, ok := precedences[p.curToken.Type]; ok {
+		return p
+	}
+
+	return LOWEST
 }

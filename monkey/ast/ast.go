@@ -80,11 +80,11 @@ func (il *IntegerLiteral) expressionNode()      {}
 func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
 func (il *IntegerLiteral) String() string       { return il.Token.Literal }
 
-// 前置式のASTノード
+// 前置演算子のASTノード
 type PrefixExpression struct {
 	Token    token.Token // 前置トークン。たとえば「！」
-	Operator string
-	Right    Expression
+	Operator string      // "-" or "!"を格納する
+	Right    Expression  // 演算子の右側の指揮を格納する
 }
 
 func (pe *PrefixExpression) expressionNode()      {}
@@ -94,6 +94,27 @@ func (pe *PrefixExpression) String() string {
 	out.WriteString("(")
 	out.WriteString(pe.Operator)
 	out.WriteString(pe.Right.String())
+	out.WriteString(")")
+
+	return out.String()
+}
+
+type InfixExpression struct {
+	Token    token.Token // 演算子トークン、たとえば「＋」
+	Left     Expression
+	Operator string
+	Right    Expression
+}
+
+func (oe *InfixExpression) expressionNode()      {}
+func (oe *InfixExpression) TokenLiteral() string { return oe.Token.Literal }
+func (oe *InfixExpression) String() string {
+	var out bytes.Buffer
+
+	out.WriteString("(")
+	out.WriteString(oe.Left.String())
+	out.WriteString(" " + oe.Operator + " ")
+	out.WriteString(oe.Right.String())
 	out.WriteString(")")
 
 	return out.String()
